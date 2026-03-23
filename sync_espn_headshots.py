@@ -27,6 +27,7 @@ GITHUB_REPO = "stinger-assets"
 INPUT_CSV = Path("data/players_to_fetch.csv")
 INDEX_CSV = Path("data/espn_player_index.csv")
 RESULTS_CSV = Path("data/espn_headshot_results.csv")
+HEADSHOT_MAP_CSV = Path("data/espn_headshots_map.csv")
 
 REQUEST_TIMEOUT = 20
 REQUEST_SLEEP_SECONDS = 0.4
@@ -438,6 +439,25 @@ def load_requests(path: Path) -> list[RequestRow]:
                 )
             )
         return rows
+    
+def write_headshot_map(results: list[MatchResult], path: Path) -> None:
+    rows = []
+    for r in results:
+        if r.status == "DOWNLOADED":
+            # keep the original key if supplied; otherwise derive from requested name
+            if r.player_key.strip():
+                output_key = r.player_key.strip()
+            else:
+                output_key = safe_filename(r.requested_name)
+
+            rows.append({
+                "sport": r.sport,
+                "player_key": output_key,
+                "github_raw_url": r.github_raw_url,
+                "status": r.status,
+            })
+
+    save_csv(rows, path)
 
 
 # =========================================================
@@ -598,6 +618,9 @@ def run_downloads() -> None:
     print(f"Downloaded: {downloaded}")
     print(f"No match:   {no_match}")
     print(f"Saved results to {RESULTS_CSV}")
+
+    write_headshot_map(results, HEADSHOT_MAP_CSV)
+    print(f"Saved sheet-ready map to {HEADSHOT_MAP_CSV}")
 
 
 def main() -> None:
