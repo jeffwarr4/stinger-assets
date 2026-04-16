@@ -572,6 +572,40 @@ def git_commit_and_push(repo_path: Path, message: str) -> None:
 # MAIN
 # =========================================================
 
+def add_players_if_new(player_names: list[str], sport: str = "mlb") -> list[str]:
+    """Append players to INPUT_CSV for the given sport, skipping any already present.
+
+    Returns the list of names actually added.
+    """
+    sport_upper = sport.upper()
+    existing = load_requests(INPUT_CSV) if INPUT_CSV.exists() else []
+    existing_norms = {normalize_name(r.player_name) for r in existing if r.sport == sport_upper}
+
+    added: list[str] = []
+    seen = set(existing_norms)
+    new_rows: list[RequestRow] = []
+    for name in player_names:
+        norm = normalize_name(name)
+        if norm not in seen:
+            new_rows.append(RequestRow(sport=sport_upper, player_name=name, player_key=safe_filename(name)))
+            seen.add(norm)
+            added.append(name)
+
+    if not new_rows:
+        return added
+
+    ensure_parent(INPUT_CSV)
+    is_empty = not INPUT_CSV.exists() or INPUT_CSV.stat().st_size == 0
+    with INPUT_CSV.open("a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["sport", "player_name", "player_key"])
+        if is_empty:
+            writer.writeheader()
+        for row in new_rows:
+            writer.writerow(asdict(row))
+
+    return added
+
+
 def run_build_index() -> None:
     print("Building ESPN player index...")
     index_rows = build_player_index()
