@@ -1,0 +1,7 @@
+# Python
+__pycache__/
+*.pyc
+
+# Regenerated every run — not worth tracking
+data/espn_player_index.csv
+data/espn_headshot_results.csv
