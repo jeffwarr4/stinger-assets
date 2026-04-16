@@ -19,7 +19,7 @@ from bs4 import BeautifulSoup
 # CONFIG
 # =========================================================
 
-ASSETS_REPO_PATH = Path(r"C:\Users\jeffw\OneDrive\DevProj\stinger-assets")
+ASSETS_REPO_PATH = Path(__file__).parent.resolve()
 ASSETS_BRANCH = "main"
 GITHUB_OWNER = "jeffwarr4"
 GITHUB_REPO = "stinger-assets"
@@ -45,7 +45,7 @@ HEADERS = {
 }
 
 SPORT_OUTPUT_DIRS = {
-    "MLB": Path("mlb/headshots"),
+    "MLB": Path("mlb/Headshots"),
     "NBA": Path("nba/headshots"),
     "NFL": Path("nfl/headshots"),
     "NHL": Path("nhl/headshots"),
