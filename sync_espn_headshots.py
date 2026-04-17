@@ -521,6 +521,23 @@ def sync_headshots(index_rows: list[PlayerIndexRow], requests_to_process: list[R
         full_path = ASSETS_REPO_PATH / relative_path
         github_url = build_github_raw_url(relative_path)
 
+        if full_path.exists():
+            results.append(
+                MatchResult(
+                    sport=req.sport,
+                    requested_name=req.player_name,
+                    player_key=req.player_key,
+                    matched_name=match_row.player_name,
+                    match_score=round(score, 4),
+                    espn_athlete_id=match_row.espn_athlete_id,
+                    headshot_url=match_row.headshot_url,
+                    local_repo_path=str(full_path),
+                    github_raw_url=github_url,
+                    status="EXISTS",
+                )
+            )
+            continue
+
         try:
             download_file(session, match_row.headshot_url, full_path)
             results.append(
@@ -652,10 +669,18 @@ def run_downloads() -> None:
     save_csv([asdict(r) for r in results], RESULTS_CSV)
 
     downloaded = sum(1 for r in results if r.status == "DOWNLOADED")
-    no_match = sum(1 for r in results if r.status == "NO_MATCH")
+    exists    = sum(1 for r in results if r.status == "EXISTS")
+    no_match  = sum(1 for r in results if r.status == "NO_MATCH")
+    failed    = sum(1 for r in results if r.status.startswith("DOWNLOAD_FAILED"))
 
     print(f"Downloaded: {downloaded}")
+    print(f"Skipped (already have): {exists}")
     print(f"No match:   {no_match}")
+    if failed:
+        print(f"Failed:     {failed}")
+        for r in results:
+            if r.status.startswith("DOWNLOAD_FAILED"):
+                print(f"  {r.requested_name}: {r.status}")
     print(f"Saved results to {RESULTS_CSV}")
 
     write_headshot_map(results, HEADSHOT_MAP_CSV)
