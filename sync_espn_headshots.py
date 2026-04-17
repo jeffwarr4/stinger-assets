@@ -443,18 +443,13 @@ def load_requests(path: Path) -> list[RequestRow]:
 def write_headshot_map(results: list[MatchResult], path: Path) -> None:
     rows = []
     for r in results:
-        if r.status == "DOWNLOADED":
-            # keep the original key if supplied; otherwise derive from requested name
-            if r.player_key.strip():
-                output_key = r.player_key.strip()
-            else:
-                output_key = safe_filename(r.requested_name)
-
+        if r.status in ("DOWNLOADED", "EXISTS"):
+            output_key = r.player_key.strip() if r.player_key.strip() else safe_filename(r.requested_name)
             rows.append({
                 "sport": r.sport,
                 "player_key": output_key,
                 "github_raw_url": r.github_raw_url,
-                "status": r.status,
+                "status": "DOWNLOADED",  # normalize — file is on disk either way
             })
 
     save_csv(rows, path)
