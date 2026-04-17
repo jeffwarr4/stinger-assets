@@ -28,6 +28,35 @@ LOGO_OUTPUT_DIRS = {
     "NHL": ASSETS_REPO_PATH / "nhl" / "logos",
 }
 
+# ESPN URL slug → canonical abbreviation used in the dataset.
+# Only entries that differ from the slug need to be listed.
+SLUG_RENAME: dict[str, dict[str, str]] = {
+    "MLB": {
+        "sd":  "sdp",   # San Diego Padres
+        "sf":  "sfg",   # San Francisco Giants
+        "tb":  "tbr",   # Tampa Bay Rays
+        "kc":  "kcr",   # Kansas City Royals
+        "cws": "chw",   # Chicago White Sox
+        "wsh": "wsn",   # Washington Nationals
+        "ath": "oak",   # Athletics
+    },
+    "NBA": {
+        "gs":   "gsw",  # Golden State Warriors
+        "no":   "nop",  # New Orleans Pelicans
+        "ny":   "nyk",  # New York Knicks
+        "sa":   "sas",  # San Antonio Spurs
+        "utah": "uta",  # Utah Jazz
+        "wsh":  "was",  # Washington Wizards
+    },
+    "NFL": {},
+    "NHL": {
+        "nj":   "njd",  # New Jersey Devils
+        "sj":   "sjs",  # San Jose Sharks
+        "tb":   "tbl",  # Tampa Bay Lightning
+        "utah": "uta",  # Utah Hockey Club
+    },
+}
+
 
 def fetch_logos(sport: str, session: requests.Session) -> None:
     urls = SPORT_TEAM_URLS.get(sport.upper(), [])
@@ -45,13 +74,15 @@ def fetch_logos(sport: str, session: requests.Session) -> None:
         if not slug:
             continue
 
-        dest = out_dir / f"{slug}.png"
+        filename = SLUG_RENAME.get(sport.upper(), {}).get(slug, slug)
+        dest = out_dir / f"{filename}.png"
         logo_url = LOGO_BASE.format(sport=sport.lower(), slug=slug)
         try:
             r = session.get(logo_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
             r.raise_for_status()
             dest.write_bytes(r.content)
-            print(f"  [ok]   {slug}.png")
+            label = f"{slug} → {filename}" if filename != slug else slug
+            print(f"  [ok]   {label}.png")
         except Exception as exc:
             print(f"  [fail] {slug}: {exc}")
 
