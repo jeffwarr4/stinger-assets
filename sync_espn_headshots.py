@@ -159,7 +159,7 @@ SPORT_TEAM_URLS = {
         "https://www.espn.com/mlb/team/roster/_/name/bal/baltimore-orioles",
         "https://www.espn.com/mlb/team/roster/_/name/bos/boston-red-sox",
         "https://www.espn.com/mlb/team/roster/_/name/chc/chicago-cubs",
-        "https://www.espn.com/mlb/team/roster/_/name/cws/chicago-white-sox",
+        "https://www.espn.com/mlb/team/roster/_/name/chw/chicago-white-sox",
         "https://www.espn.com/mlb/team/roster/_/name/cin/cincinnati-reds",
         "https://www.espn.com/mlb/team/roster/_/name/cle/cleveland-guardians",
         "https://www.espn.com/mlb/team/roster/_/name/col/colorado-rockies",
@@ -676,6 +676,10 @@ def run_downloads() -> None:
     print(f"Downloaded: {downloaded}")
     print(f"Skipped (already have): {exists}")
     print(f"No match:   {no_match}")
+    if no_match:
+        for r in results:
+            if r.status == "NO_MATCH":
+                print(f"  [{r.sport}] {r.requested_name}")
     if failed:
         print(f"Failed:     {failed}")
         for r in results:

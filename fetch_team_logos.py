@@ -36,7 +36,7 @@ SLUG_RENAME: dict[str, dict[str, str]] = {
         "sf":  "sfg",   # San Francisco Giants
         "tb":  "tbr",   # Tampa Bay Rays
         "kc":  "kcr",   # Kansas City Royals
-        "cws": "chw",   # Chicago White Sox
+        # "cws": "chw" — roster URL now uses chw directly, no rename needed
         "wsh": "wsn",   # Washington Nationals
         "ath": "oak",   # Athletics
     },
