@@ -563,9 +563,14 @@ def sync_headshots(index_rows: list[PlayerIndexRow], requests_to_process: list[R
 # =========================================================
 
 def git_commit_and_push(repo_path: Path, message: str) -> None:
-    subprocess.run(["git", "-C", str(repo_path), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(repo_path), "commit", "-m", message], check=False)
-    subprocess.run(["git", "-C", str(repo_path), "push"], check=True)
+    g = ["git", "-C", str(repo_path)]
+    subprocess.run(g + ["add", "."], check=True)
+    subprocess.run(g + ["commit", "-m", message], check=False)
+    result = subprocess.run(g + ["push"])
+    if result.returncode != 0:
+        print("Push rejected — pulling and retrying...")
+        subprocess.run(g + ["pull", "--no-rebase"], check=True)
+        subprocess.run(g + ["push"], check=True)
 
 
 # =========================================================
