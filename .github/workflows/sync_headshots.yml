@@ -2,7 +2,7 @@ name: Sync Headshots
 
 on:
   schedule:
-    - cron: '0 10 * * 1'  # Monday 10:00 UTC — after weekly predictions run
+    - cron: '0 15 * * 1'  # Monday 15:00 UTC — 2 hrs after predictions commit (13:00 UTC)
   workflow_dispatch:        # manual trigger from GitHub Actions UI
 
 permissions:

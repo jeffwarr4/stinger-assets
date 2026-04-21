@@ -390,7 +390,13 @@ def build_player_index() -> list[PlayerIndexRow]:
     all_rows: list[PlayerIndexRow] = []
 
     for sport, urls in SPORT_TEAM_URLS.items():
-        for url in urls:
+        # For MLB, also scrape the injuries page so IL players are indexed.
+        # Injury URL mirrors roster URL: .../team/roster/... → .../team/injuries/...
+        extra_urls = (
+            [u.replace("/team/roster/", "/team/injuries/") for u in urls]
+            if sport == "MLB" else []
+        )
+        for url in urls + extra_urls:
             try:
                 rows = scrape_roster_page(session, sport, url)
                 all_rows.extend(rows)
