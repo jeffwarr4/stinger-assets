@@ -55,12 +55,12 @@ def fetch_candidates(url: str) -> list[dict]:
 
 
 def load_existing() -> set[tuple[str, str]]:
-    """Return (sport_upper, normalized_name) pairs already in players_to_fetch.csv."""
+    """Return (sport_upper, player_key) pairs already in players_to_fetch.csv."""
     if not FETCH_CSV.exists():
         return set()
     with FETCH_CSV.open("r", newline="", encoding="utf-8-sig") as f:
         return {
-            (row["sport"].strip().upper(), normalize(row["player_name"]))
+            (row["sport"].strip().upper(), row.get("player_key", "").strip() or normalize(row["player_name"]))
             for row in csv.DictReader(f)
             if row.get("sport") and row.get("player_name")
         }
@@ -70,7 +70,7 @@ def append_rows(rows: list[dict]) -> None:
     FETCH_CSV.parent.mkdir(parents=True, exist_ok=True)
     is_empty = not FETCH_CSV.exists() or FETCH_CSV.stat().st_size == 0
     with FETCH_CSV.open("a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["sport", "player_name", "player_key"])
+        writer = csv.DictWriter(f, fieldnames=["sport", "player_name", "player_key", "team"])
         if is_empty:
             writer.writeheader()
         writer.writerows(rows)
@@ -95,14 +95,18 @@ def main() -> None:
     for row in all_candidates:
         sport = row["sport"].strip().upper()
         name  = row["player_name"].strip()
-        key   = (sport, normalize(name))
-        if key not in seen:
+        team  = row.get("team", "").strip().upper()
+        pkey  = row.get("player_key", "").strip()
+        # Dedup by player_key — handles same-name players on different teams
+        dedup_key = (sport, pkey) if pkey else (sport, normalize(name))
+        if dedup_key not in seen:
             new_rows.append({
                 "sport":       sport,
                 "player_name": name,
-                "player_key":  row.get("player_key", "").strip(),
+                "player_key":  pkey,
+                "team":        team,
             })
-            seen.add(key)
+            seen.add(dedup_key)
 
     if not new_rows:
         print(f"No new players to add — all {len(all_candidates)} candidates already in list.")

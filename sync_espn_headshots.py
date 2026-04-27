@@ -216,6 +216,7 @@ class RequestRow:
     sport: str
     player_name: str
     player_key: str
+    team: str = ""   # optional — set when two players share a name (e.g. two Max Muncys)
 
 
 @dataclass
@@ -417,6 +418,7 @@ def load_requests(path: Path) -> list[RequestRow]:
             sport = (r.get("sport") or "").strip().upper()
             player_name = (r.get("player_name") or "").strip()
             player_key = (r.get("player_key") or "").strip()
+            team = (r.get("team") or "").strip().upper()
 
             if not sport or not player_name:
                 continue
@@ -426,6 +428,7 @@ def load_requests(path: Path) -> list[RequestRow]:
                     sport=sport,
                     player_name=player_name,
                     player_key=player_key,
+                    team=team,
                 )
             )
         return rows
@@ -453,6 +456,12 @@ def best_match(req: RequestRow, index_rows: list[PlayerIndexRow]) -> tuple[Optio
     candidates = [r for r in index_rows if r.sport == req.sport]
     if not candidates:
         return None, 0.0
+
+    # Narrow to specific team when set — handles same-name players on different teams
+    if req.team:
+        team_candidates = [r for r in candidates if r.team_code.upper() == req.team]
+        if team_candidates:
+            candidates = team_candidates
 
     target = normalize_name(req.player_name)
     scored = [(row, similarity(target, row.player_name_norm)) for row in candidates]
@@ -579,23 +588,28 @@ def git_commit_and_push(repo_path: Path, message: str) -> None:
 # MAIN
 # =========================================================
 
-def add_players_if_new(player_names: list[str], sport: str = "mlb") -> list[str]:
+def add_players_if_new(player_names: list[str], sport: str = "mlb", teams: Optional[list[str]] = None) -> list[str]:
     """Append players to INPUT_CSV for the given sport, skipping any already present.
 
+    player_names and teams (optional) must be parallel lists.
     Returns the list of names actually added.
     """
     sport_upper = sport.upper()
     existing = load_requests(INPUT_CSV) if INPUT_CSV.exists() else []
-    existing_norms = {normalize_name(r.player_name) for r in existing if r.sport == sport_upper}
+    existing_keys = {r.player_key for r in existing if r.sport == sport_upper}
+
+    if teams is None:
+        teams = [""] * len(player_names)
 
     added: list[str] = []
-    seen = set(existing_norms)
+    seen_keys = set(existing_keys)
     new_rows: list[RequestRow] = []
-    for name in player_names:
-        norm = normalize_name(name)
-        if norm not in seen:
-            new_rows.append(RequestRow(sport=sport_upper, player_name=name, player_key=safe_filename(name)))
-            seen.add(norm)
+
+    for name, team in zip(player_names, teams):
+        key = safe_filename(f"{name}_{team}" if team else name)
+        if key not in seen_keys:
+            new_rows.append(RequestRow(sport=sport_upper, player_name=name, player_key=key, team=team.upper()))
+            seen_keys.add(key)
             added.append(name)
 
     if not new_rows:
@@ -604,7 +618,7 @@ def add_players_if_new(player_names: list[str], sport: str = "mlb") -> list[str]
     ensure_parent(INPUT_CSV)
     is_empty = not INPUT_CSV.exists() or INPUT_CSV.stat().st_size == 0
     with INPUT_CSV.open("a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["sport", "player_name", "player_key"])
+        writer = csv.DictWriter(f, fieldnames=["sport", "player_name", "player_key", "team"])
         if is_empty:
             writer.writeheader()
         for row in new_rows:
