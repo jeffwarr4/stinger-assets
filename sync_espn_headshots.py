@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Optional
 
 import requests
-from bs4 import BeautifulSoup
 
 
 # =========================================================
@@ -49,6 +48,14 @@ SPORT_OUTPUT_DIRS = {
     "NBA": Path("nba/headshots"),
     "NFL": Path("nfl/headshots"),
     "NHL": Path("nhl/headshots"),
+}
+
+# ESPN JSON API — sport/league path segments per sport
+SPORT_ESPN_PATH = {
+    "MLB": ("baseball", "mlb"),
+    "NBA": ("basketball", "nba"),
+    "NFL": ("football", "nfl"),
+    "NHL": ("hockey", "nhl"),
 }
 
 # ESPN roster URLs
@@ -313,72 +320,49 @@ def resolve_output_name(req: RequestRow, match_row: PlayerIndexRow) -> str:
 # =========================================================
 
 def scrape_roster_page(session: requests.Session, sport: str, url: str) -> list[PlayerIndexRow]:
-    print(f"Scraping {sport}: {url}")
-    resp = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
-    resp.raise_for_status()
-
-    soup = BeautifulSoup(resp.text, "html.parser")
     team_code, team_slug = parse_team_parts(url)
+    sport_path, league = SPORT_ESPN_PATH[sport]
+    api_url = (
+        f"https://site.api.espn.com/apis/site/v2/sports"
+        f"/{sport_path}/{league}/teams/{team_code}/roster"
+    )
+    print(f"Fetching {sport} {team_code.upper()}: {api_url}")
+
+    resp = session.get(api_url, timeout=REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    data = resp.json()
 
     rows: list[PlayerIndexRow] = []
     seen_ids: set[str] = set()
 
-    anchors = soup.find_all("a", href=True)
+    # Athletes are grouped by position category (e.g. "Offense", "Defense", "Pitchers")
+    for group in data.get("athletes", []):
+        for athlete in group.get("items", []):
+            athlete_id = str(athlete.get("id", ""))
+            player_name = athlete.get("displayName", "")
 
-    for a in anchors:
-        href = a.get("href", "")
-        player_name = a.get_text(" ", strip=True)
+            if not athlete_id or not player_name or athlete_id in seen_ids:
+                continue
+            seen_ids.add(athlete_id)
 
-        if not player_name:
-            continue
-
-        if not any(marker in href for marker in ["/player/_/id/", "/athlete/_/id/"]):
-            continue
-
-        athlete_id = extract_athlete_id(href)
-        if not athlete_id:
-            continue
-
-        if athlete_id in seen_ids:
-            continue
-        seen_ids.add(athlete_id)
-
-        player_url = href if href.startswith("http") else f"https://www.espn.com{href}"
-
-        headshot_url = ""
-
-        search_nodes = []
-        parent = a.parent
-        if parent:
-            search_nodes.append(parent)
-        if parent and parent.parent:
-            search_nodes.append(parent.parent)
-
-        for node in search_nodes:
-            imgs = node.find_all("img")
-            for img in imgs:
-                src = img.get("src") or img.get("data-src") or ""
-                if athlete_id in src and "headshots" in src:
-                    headshot_url = src
-                    break
-            if headshot_url:
-                break
-
-        if not headshot_url:
-            headshot_url = f"https://a.espncdn.com/i/headshots/{sport.lower()}/players/full/{athlete_id}.png"
-
-        rows.append(
-            PlayerIndexRow(
-                sport=sport,
-                team_code=team_code.upper(),
-                team_slug=team_slug,
-                player_name=player_name,
-                player_name_norm=normalize_name(player_name),
-                espn_athlete_id=athlete_id,
-                headshot_url=headshot_url,
-                player_url=player_url,
+            headshot_url = (
+                athlete.get("headshot", {}).get("href")
+                or f"https://a.espncdn.com/i/headshots/{league}/players/full/{athlete_id}.png"
             )
-        )
+            player_url = f"https://www.espn.com/{league}/player/_/id/{athlete_id}"
+
+            rows.append(
+                PlayerIndexRow(
+                    sport=sport,
+                    team_code=team_code.upper(),
+                    team_slug=team_slug,
+                    player_name=player_name,
+                    player_name_norm=normalize_name(player_name),
+                    espn_athlete_id=athlete_id,
+                    headshot_url=headshot_url,
+                    player_url=player_url,
+                )
+            )
 
     return rows
 
