@@ -606,7 +606,7 @@ def add_players_if_new(player_names: list[str], sport: str = "mlb", teams: Optio
     new_rows: list[RequestRow] = []
 
     for name, team in zip(player_names, teams):
-        key = safe_filename(f"{name}_{team}" if team else name)
+        key = safe_filename(f"{name} {team}") if team else safe_filename(name)
         if key not in seen_keys:
             new_rows.append(RequestRow(sport=sport_upper, player_name=name, player_key=key, team=team.upper()))
             seen_keys.add(key)
