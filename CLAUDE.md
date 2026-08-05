@@ -57,9 +57,34 @@ effectively a list of team codes in disguise. Two hosts are actually contacted: 
 JSON) and `a.espncdn.com` (images).
 
 **Matching is fuzzy and can silently mismatch.** `best_match()` scores `difflib` similarity on normalized
-names, filtered to the requested sport, and further narrowed to `team_code` when the request row specifies a
-team. `MIN_MATCH_SCORE = 0.84` is the accept threshold. Setting `team` in `players_to_fetch.csv` is the only
-defence against two players sharing a name — use it whenever a request is ambiguous.
+names, filtered to the requested sport, and preferentially narrowed to `team_code`. `MIN_MATCH_SCORE = 0.84`
+is the accept threshold. Setting `team` in `players_to_fetch.csv` is the only defence against two players
+sharing a name — use it whenever a request is ambiguous.
+
+**`team` is a preference, never a hard filter.** It records the team a player was on when the request was
+written; ESPN indexes his *current* team. Treating it as a filter meant a traded player matched nobody on his
+old roster and was dropped as `NO_MATCH` — and because `write_headshot_map()` rewrites the map from successful
+results only, **a `NO_MATCH` deletes that player's key from `espn_headshots_map.csv` entirely**, silently
+breaking the downstream XLOOKUP. That is the failure mode to watch: a missing graphic, not an error. So
+`best_match()` tries the requested team first and falls back to the whole sport if that can't clear the
+threshold; genuine trades print `[TRADED]` but keep the original `player_key`.
+
+**`TEAM_CODE_ALIASES` translates FanGraphs abbreviations to ESPN's.** The prediction repos write `KCR`, `SDP`,
+`SFG`, `TBR`, `WSN`, `OAK`; ESPN uses `KC`, `SD`, `SF`, `TB`, `WSH`, `ATH`. Six clubs, and without the map the
+team narrowing matches nothing for any of them.
+
+**The roster endpoint returns two different JSON shapes, by sport.** MLB/NFL/NHL return `athletes[]` as
+position groups each holding an `items[]` list; **NBA returns a flat `athletes[]` list**. The parser originally
+handled only the grouped shape, so NBA indexed zero players indefinitely and every NBA request came back
+`NO_MATCH`. `build_player_index()` now logs `[ERROR] {sport}: indexed 0 players` when a whole league yields
+nothing — treat that as a parser or endpoint change, never as an empty league.
+
+**Injured players are not on the roster endpoint.** `/teams/{code}/roster` returns the active roster only (26
+for MLB), so anyone on the IL is missing. `scrape_injuries()` pulls the league-wide `/injuries` endpoint —
+one request, ~265 MLB players — and the athlete objects there carry no top-level `id`, so it is recovered by
+regex from the headshot href or the player link. An earlier attempt rewrote roster URLs to
+`.../team/injuries/...`, which did nothing at all: `scrape_roster_page()` only parses the team code out of the
+URL and rebuilds the roster API endpoint, so it just re-fetched the same 30 rosters.
 
 **Player keys are the integration contract.** `resolve_output_name()` uses `player_key` from
 `players_to_fetch.csv` verbatim if present, otherwise falls back to a safe-filename of the player's name. The

@@ -62,6 +62,24 @@ _KNOWN_BAD_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+# FanGraphs (and older Baseball-Reference) team abbreviations differ from
+# ESPN's for six clubs. players_to_fetch.csv is populated from the prediction
+# repos, which use the FanGraphs dialect, so the `team` column has to be
+# translated before it can be compared against the ESPN roster index.
+#
+# Without this, best_match() narrows to a team code ESPN has never heard of,
+# finds nobody, and drops the player as NO_MATCH — which deletes his key from
+# espn_headshots_map.csv and breaks the downstream XLOOKUP.
+TEAM_CODE_ALIASES = {
+    "KCR": "KC",    # Kansas City Royals
+    "SDP": "SD",    # San Diego Padres
+    "SFG": "SF",    # San Francisco Giants
+    "TBR": "TB",    # Tampa Bay Rays
+    "WSN": "WSH",   # Washington Nationals
+    "WAS": "WSH",
+    "OAK": "ATH",   # Athletics — ESPN dropped the city prefix after the move
+}
+
 SPORT_OUTPUT_DIRS = {
     "MLB": Path("mlb/Headshots"),
     "NBA": Path("nba/headshots"),
@@ -355,35 +373,119 @@ def scrape_roster_page(session: requests.Session, sport: str, url: str) -> list[
     rows: list[PlayerIndexRow] = []
     seen_ids: set[str] = set()
 
-    # Athletes are grouped by position category (e.g. "Offense", "Defense", "Pitchers")
-    for group in data.get("athletes", []):
-        for athlete in group.get("items", []):
-            athlete_id = str(athlete.get("id", ""))
-            player_name = athlete.get("displayName", "")
+    # Two response shapes, and they differ BY SPORT:
+    #   MLB / NFL / NHL -> athletes[] is a list of position groups, each with
+    #                      an "items" list of athletes
+    #   NBA             -> athletes[] is a FLAT list of athletes
+    # Only the grouped shape used to be handled, so NBA silently produced zero
+    # rows on every run and every NBA headshot request came back NO_MATCH.
+    athletes_raw = data.get("athletes", [])
+    flat_athletes = []
+    for entry in athletes_raw:
+        if isinstance(entry, dict) and "items" in entry:
+            flat_athletes.extend(entry.get("items") or [])
+        elif isinstance(entry, dict):
+            flat_athletes.append(entry)
 
-            if not athlete_id or not player_name or athlete_id in seen_ids:
-                continue
-            seen_ids.add(athlete_id)
+    for athlete in flat_athletes:
+        athlete_id = str(athlete.get("id", ""))
+        player_name = athlete.get("displayName", "")
 
-            headshot_url = (
-                athlete.get("headshot", {}).get("href")
-                or f"https://a.espncdn.com/i/headshots/{league}/players/full/{athlete_id}.png"
+        if not athlete_id or not player_name or athlete_id in seen_ids:
+            continue
+        seen_ids.add(athlete_id)
+
+        headshot_url = (
+            (athlete.get("headshot") or {}).get("href")
+            or f"https://a.espncdn.com/i/headshots/{league}/players/full/{athlete_id}.png"
+        )
+        player_url = f"https://www.espn.com/{league}/player/_/id/{athlete_id}"
+
+        rows.append(
+            PlayerIndexRow(
+                sport=sport,
+                team_code=team_code.upper(),
+                team_slug=team_slug,
+                player_name=player_name,
+                player_name_norm=normalize_name(player_name),
+                espn_athlete_id=athlete_id,
+                headshot_url=headshot_url,
+                player_url=player_url,
             )
-            player_url = f"https://www.espn.com/{league}/player/_/id/{athlete_id}"
+        )
+
+    return rows
+
+
+def scrape_injuries(session: requests.Session, sport: str) -> list[PlayerIndexRow]:
+    """Index injured players, who are absent from the team roster endpoint.
+
+    ESPN's /teams/{code}/roster returns the ACTIVE roster only — 26 players for
+    MLB. Anyone on the IL is simply missing, which is why Aaron Judge, Cody
+    Bellinger, Byron Buxton and Tyler Glasnow all came back NO_MATCH.
+
+    An earlier attempt at this rewrote the roster URL to .../team/injuries/...,
+    but scrape_roster_page() only parses the team code out of that URL and
+    rebuilds the roster API endpoint — so it re-fetched the same 30 rosters and
+    added nothing. The real fix is this separate league-wide endpoint, which is
+    one request rather than 30.
+    """
+    sport_path, league = SPORT_ESPN_PATH[sport]
+    api_url = (f"https://site.api.espn.com/apis/site/v2/sports"
+               f"/{sport_path}/{league}/injuries")
+    print(f"Fetching {sport} injuries: {api_url}")
+
+    resp = session.get(api_url, timeout=REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    data = resp.json()
+
+    rows: list[PlayerIndexRow] = []
+    seen: set[str] = set()
+
+    for team_block in data.get("injuries", []) or []:
+        for entry in team_block.get("injuries", []) or []:
+            athlete = entry.get("athlete") or {}
+            player_name = athlete.get("displayName") or ""
+            if not player_name:
+                continue
+
+            # The athlete object here carries no top-level id; it is recoverable
+            # from the headshot href or the player link.
+            headshot_url = (athlete.get("headshot") or {}).get("href") or ""
+            athlete_id = ""
+            m = re.search(r"/full/(\d+)\.png", headshot_url)
+            if m:
+                athlete_id = m.group(1)
+            else:
+                for link in athlete.get("links") or []:
+                    m = re.search(r"/id/(\d+)", link.get("href", "") or "")
+                    if m:
+                        athlete_id = m.group(1)
+                        break
+            if not athlete_id or athlete_id in seen:
+                continue
+            seen.add(athlete_id)
+
+            team = athlete.get("team") or {}
+            team_code = (team.get("abbreviation") or "").upper()
+            if not headshot_url:
+                headshot_url = (f"https://a.espncdn.com/i/headshots/{league}"
+                                f"/players/full/{athlete_id}.png")
 
             rows.append(
                 PlayerIndexRow(
                     sport=sport,
-                    team_code=team_code.upper(),
-                    team_slug=team_slug,
+                    team_code=team_code,
+                    team_slug=(team.get("slug") or ""),
                     player_name=player_name,
                     player_name_norm=normalize_name(player_name),
                     espn_athlete_id=athlete_id,
                     headshot_url=headshot_url,
-                    player_url=player_url,
+                    player_url=f"https://www.espn.com/{league}/player/_/id/{athlete_id}",
                 )
             )
 
+    print(f"  {len(rows)} injured players indexed")
     return rows
 
 
@@ -394,19 +496,32 @@ def build_player_index() -> list[PlayerIndexRow]:
     all_rows: list[PlayerIndexRow] = []
 
     for sport, urls in SPORT_TEAM_URLS.items():
-        # For MLB, also scrape the injuries page so IL players are indexed.
-        # Injury URL mirrors roster URL: .../team/roster/... → .../team/injuries/...
-        extra_urls = (
-            [u.replace("/team/roster/", "/team/injuries/") for u in urls]
-            if sport == "MLB" else []
-        )
-        for url in urls + extra_urls:
+        sport_rows: list[PlayerIndexRow] = []
+
+        for url in urls:
             try:
-                rows = scrape_roster_page(session, sport, url)
-                all_rows.extend(rows)
+                sport_rows.extend(scrape_roster_page(session, sport, url))
             except Exception as exc:
                 print(f"[WARN] Failed scraping {sport} {url}: {exc}")
             time.sleep(REQUEST_SLEEP_SECONDS)
+
+        # Active rosters exclude injured players — pull them separately.
+        try:
+            sport_rows.extend(scrape_injuries(session, sport))
+        except Exception as exc:
+            print(f"[WARN] Failed fetching {sport} injuries: {exc}")
+        time.sleep(REQUEST_SLEEP_SECONDS)
+
+        # A whole sport returning nothing means a parser or endpoint change,
+        # not an empty league. NBA silently produced zero rows for months
+        # because its roster payload uses a different shape.
+        if not sport_rows:
+            print(f"[ERROR] {sport}: indexed 0 players — every {sport} request "
+                  f"will come back NO_MATCH. Check the API response shape.")
+        else:
+            print(f"[OK] {sport}: {len(sport_rows)} rows")
+
+        all_rows.extend(sport_rows)
 
     deduped: dict[tuple[str, str], PlayerIndexRow] = {}
     for row in all_rows:
@@ -472,20 +587,42 @@ def write_headshot_map(results: list[MatchResult], path: Path) -> None:
 # =========================================================
 
 def best_match(req: RequestRow, index_rows: list[PlayerIndexRow]) -> tuple[Optional[PlayerIndexRow], float]:
+    """Match a requested player against the ESPN roster index.
+
+    The `team` column disambiguates players who share a name, so it is tried
+    first. But it must NOT be treated as a hard filter: `players_to_fetch.csv`
+    records the team a player was on when the request was written, and ESPN
+    indexes his *current* team. After a trade those disagree, the team-narrowed
+    pool contains no plausible match, and the player is dropped as NO_MATCH —
+    which then removes his key from espn_headshots_map.csv entirely and breaks
+    the downstream XLOOKUP.
+
+    So: prefer the requested team, but fall back to the whole sport when the
+    narrowed pool can't clear MIN_MATCH_SCORE.
+    """
     candidates = [r for r in index_rows if r.sport == req.sport]
     if not candidates:
         return None, 0.0
 
-    # Narrow to specific team when set — handles same-name players on different teams
-    if req.team:
-        team_candidates = [r for r in candidates if r.team_code.upper() == req.team]
-        if team_candidates:
-            candidates = team_candidates
-
     target = normalize_name(req.player_name)
-    scored = [(row, similarity(target, row.player_name_norm)) for row in candidates]
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return scored[0]
+
+    def rank(pool: list[PlayerIndexRow]) -> tuple[Optional[PlayerIndexRow], float]:
+        if not pool:
+            return None, 0.0
+        scored = [(row, similarity(target, row.player_name_norm)) for row in pool]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[0]
+
+    if req.team:
+        espn_team = TEAM_CODE_ALIASES.get(req.team, req.team)
+        team_row, team_score = rank([r for r in candidates
+                                     if r.team_code.upper() == espn_team])
+        if team_row is not None and team_score >= MIN_MATCH_SCORE:
+            return team_row, team_score
+        # Requested team yielded nothing usable — likely traded since the
+        # request was written. Fall through to the sport-wide pool.
+
+    return rank(candidates)
 
 
 def get_relative_output_path(req: RequestRow, match_row: PlayerIndexRow) -> Path:
@@ -512,6 +649,16 @@ def sync_headshots(index_rows: list[PlayerIndexRow], requests_to_process: list[R
 
     for req in requests_to_process:
         match_row, score = best_match(req, index_rows)
+
+        # Surface trades: the key embeds the old team (e.g. casey_mize_det)
+        # but ESPN now lists him elsewhere. The key is deliberately left alone
+        # — renaming it would orphan the downstream XLOOKUP — but it is worth
+        # printing so the drift doesn't stay invisible.
+        if (match_row and score >= MIN_MATCH_SCORE and req.team
+                and match_row.team_code.upper()
+                != TEAM_CODE_ALIASES.get(req.team, req.team)):
+            print(f"  [TRADED] {req.player_name}: requested {req.team}, "
+                  f"ESPN has {match_row.team_code} — keeping key '{req.player_key}'")
 
         if not match_row or score < MIN_MATCH_SCORE:
             results.append(
