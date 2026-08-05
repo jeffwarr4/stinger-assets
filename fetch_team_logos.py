@@ -15,7 +15,7 @@ import time
 import requests
 
 from sync_espn_headshots import (
-    SPORT_TEAM_URLS, HEADERS, REQUEST_TIMEOUT, REQUEST_SLEEP_SECONDS,
+    SPORT_TEAM_URLS, REQUEST_TIMEOUT, REQUEST_SLEEP_SECONDS,
     ASSETS_REPO_PATH, parse_team_parts, git_commit_and_push,
 )
 
@@ -78,7 +78,7 @@ def fetch_logos(sport: str, session: requests.Session) -> None:
         dest = out_dir / f"{filename}.png"
         logo_url = LOGO_BASE.format(sport=sport.lower(), slug=slug)
         try:
-            r = session.get(logo_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+            r = session.get(logo_url, timeout=REQUEST_TIMEOUT)
             r.raise_for_status()
             dest.write_bytes(r.content)
             label = f"{slug} → {filename}" if filename != slug else slug

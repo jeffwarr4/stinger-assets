@@ -1,0 +1,39 @@
+# Diagnostic only — run manually from the Actions tab.
+#
+# The headshot sync started returning 403s. This runs the same header matrix
+# on a GitHub runner that you can run locally, so the two tables can be
+# compared directly. Never scheduled; never commits anything.
+name: Probe ESPN
+
+on:
+  workflow_dispatch:
+    inputs:
+      burst:
+        description: 'Also run the rate-limit burst test'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests
+
+      - name: Runner egress IP
+        run: |
+          echo "Runner public IP: $(curl -s --max-time 10 https://api.ipify.org || echo unavailable)"
+
+      - name: Header matrix
+        run: |
+          if [ "${{ inputs.burst }}" = "true" ]; then
+            python probe_espn.py --burst
+          else
+            python probe_espn.py
+          fi

@@ -32,14 +32,33 @@ REQUEST_TIMEOUT = 20
 REQUEST_SLEEP_SECONDS = 0.4
 MIN_MATCH_SCORE = 0.84
 
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/122.0.0.0 Safari/537.36"
-)
-
-HEADERS = {
-    "User-Agent": USER_AGENT,
+# DO NOT SEND A SPOOFED User-Agent. This is what caused the August 2026
+# wave of 403s from site.api.espn.com.
+#
+# ESPN checks whether the header set is INTERNALLY CONSISTENT with the
+# browser it claims to be, and whether that browser is plausibly current.
+# Measured with probe_espn.py (roster API, same machine, same minute):
+#
+#   no headers at all              200   <- not claiming to be a browser
+#   Chrome/122 + Accept-Language   403   <- what this file used to send
+#   Chrome/122 alone               403
+#   Chrome/150 alone               403   <- current UA, but no Accept-Language
+#   Chrome/150 + Accept-Language   200
+#   Accept-Language alone          200
+#
+# Two independent ways to fail: a stale Chrome version, or a browser UA
+# without the other headers a real browser always sends. Sending nothing
+# passes both checks and needs no maintenance — a pinned Chrome version
+# starts rotting the day it is written, which is exactly how this broke.
+#
+# The a.espncdn.com image CDN accepted every variant, so this only ever
+# affected the roster API.
+#
+# Kept only as documentation of what not to do. Nothing should import it.
+_KNOWN_BAD_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/122.0.0.0 Safari/537.36"),
     "Accept-Language": "en-US,en;q=0.9",
 }
 
@@ -369,8 +388,8 @@ def scrape_roster_page(session: requests.Session, sport: str, url: str) -> list[
 
 
 def build_player_index() -> list[PlayerIndexRow]:
+    # No custom headers — see _KNOWN_BAD_HEADERS.
     session = requests.Session()
-    session.headers.update(HEADERS)
 
     all_rows: list[PlayerIndexRow] = []
 
@@ -477,7 +496,7 @@ def get_relative_output_path(req: RequestRow, match_row: PlayerIndexRow) -> Path
 
 def download_file(session: requests.Session, url: str, dest: Path) -> None:
     ensure_parent(dest)
-    resp = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT, stream=True)
+    resp = session.get(url, timeout=REQUEST_TIMEOUT, stream=True)
     resp.raise_for_status()
     with dest.open("wb") as f:
         for chunk in resp.iter_content(chunk_size=8192):
@@ -486,8 +505,8 @@ def download_file(session: requests.Session, url: str, dest: Path) -> None:
 
 
 def sync_headshots(index_rows: list[PlayerIndexRow], requests_to_process: list[RequestRow]) -> list[MatchResult]:
+    # No custom headers — see _KNOWN_BAD_HEADERS.
     session = requests.Session()
-    session.headers.update(HEADERS)
 
     results: list[MatchResult] = []
 
