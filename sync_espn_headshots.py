@@ -80,6 +80,21 @@ TEAM_CODE_ALIASES = {
     "OAK": "ATH",   # Athletics — ESPN dropped the city prefix after the move
 }
 
+# Per-sport overrides, checked before TEAM_CODE_ALIASES. nfl-awards-predictor
+# writes nflreadpy codes, which match ESPN's for 30 of 32 teams. Kept per sport
+# because "LA" means the Rams in the NFL but the Kings in ESPN's NHL dialect.
+SPORT_TEAM_CODE_ALIASES = {
+    "NFL": {
+        "LA":  "LAR",   # Los Angeles Rams
+        "WAS": "WSH",   # Washington Commanders
+    },
+}
+
+
+def espn_team_code(sport: str, team: str) -> str:
+    """Translate a prediction repo's team code to ESPN's for this sport."""
+    return SPORT_TEAM_CODE_ALIASES.get(sport, {}).get(team) or TEAM_CODE_ALIASES.get(team, team)
+
 SPORT_OUTPUT_DIRS = {
     "MLB": Path("mlb/Headshots"),
     "NBA": Path("nba/headshots"),
@@ -296,8 +311,18 @@ def ensure_parent(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+_NAME_SUFFIX_RE = re.compile(r"\s+(jr|sr|ii|iii|iv|v)$")
+
+
 def similarity(a: str, b: str) -> float:
-    return SequenceMatcher(None, a, b).ratio()
+    """Best of the raw and suffix-stripped comparisons. Sources disagree on
+    generational suffixes — nflverse has "James Cook", ESPN "James Cook III" —
+    which alone scores 0.83, under MIN_MATCH_SCORE."""
+    raw = SequenceMatcher(None, a, b).ratio()
+    a2, b2 = _NAME_SUFFIX_RE.sub("", a), _NAME_SUFFIX_RE.sub("", b)
+    if (a2, b2) == (a, b):
+        return raw
+    return max(raw, SequenceMatcher(None, a2, b2).ratio())
 
 
 def parse_team_parts(url: str) -> tuple[str, str]:
@@ -614,7 +639,7 @@ def best_match(req: RequestRow, index_rows: list[PlayerIndexRow]) -> tuple[Optio
         return scored[0]
 
     if req.team:
-        espn_team = TEAM_CODE_ALIASES.get(req.team, req.team)
+        espn_team = espn_team_code(req.sport, req.team)
         team_row, team_score = rank([r for r in candidates
                                      if r.team_code.upper() == espn_team])
         if team_row is not None and team_score >= MIN_MATCH_SCORE:
@@ -656,7 +681,7 @@ def sync_headshots(index_rows: list[PlayerIndexRow], requests_to_process: list[R
         # printing so the drift doesn't stay invisible.
         if (match_row and score >= MIN_MATCH_SCORE and req.team
                 and match_row.team_code.upper()
-                != TEAM_CODE_ALIASES.get(req.team, req.team)):
+                != espn_team_code(req.sport, req.team)):
             print(f"  [TRADED] {req.player_name}: requested {req.team}, "
                   f"ESPN has {match_row.team_code} — keeping key '{req.player_key}'")
 
