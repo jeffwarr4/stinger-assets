@@ -72,6 +72,13 @@ threshold; genuine trades print `[TRADED]` but keep the original `player_key`.
 **`TEAM_CODE_ALIASES` translates FanGraphs abbreviations to ESPN's.** The prediction repos write `KCR`, `SDP`,
 `SFG`, `TBR`, `WSN`, `OAK`; ESPN uses `KC`, `SD`, `SF`, `TB`, `WSH`, `ATH`. Six clubs, and without the map the
 team narrowing matches nothing for any of them.
+`SPORT_TEAM_CODE_ALIASES` layers per-sport overrides on top (via `espn_team_code(sport, team)`): the NFL repo
+writes nflreadpy codes, which differ from ESPN's only for `LA`→`LAR` (Rams) and `WAS`→`WSH`. Keep NFL entries out
+of the shared map — `LA` is the Kings in ESPN's NHL dialect.
+
+**Generational suffixes are ignored when scoring.** nflverse writes "James Cook", ESPN "James Cook III"; the raw
+similarity (0.83) misses `MIN_MATCH_SCORE`, so `similarity()` also compares with Jr/Sr/II/III/IV/V stripped and
+keeps the better score.
 
 **The roster endpoint returns two different JSON shapes, by sport.** MLB/NFL/NHL return `athletes[]` as
 position groups each holding an `items[]` list; **NBA returns a flat `athletes[]` list**. The parser originally
