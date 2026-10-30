@@ -74,7 +74,10 @@ threshold; genuine trades print `[TRADED]` but keep the original `player_key`.
 team narrowing matches nothing for any of them.
 `SPORT_TEAM_CODE_ALIASES` layers per-sport overrides on top (via `espn_team_code(sport, team)`): the NFL repo
 writes nflreadpy codes, which differ from ESPN's only for `LA`→`LAR` (Rams) and `WAS`→`WSH`. Keep NFL entries out
-of the shared map — `LA` is the Kings in ESPN's NHL dialect.
+of the shared map — `LA` is the Kings in ESPN's NHL dialect. The NHL repo writes Hockey-Reference codes:
+`LAK`→`LA`, `NJD`→`NJ`, `SJS`→`SJ`, `TBL`→`TB`, `UTA`→`UTAH`, `VEG`→`VGK`. NHL `player_key`s keep the
+Hockey-Reference code (`jack_eichel_veg`), and so do the logo filenames that nhl-awards-predictor reads, except
+`LAK`, which it maps to `la.png`.
 
 **Generational suffixes are ignored when scoring.** nflverse writes "James Cook", ESPN "James Cook III"; the raw
 similarity (0.83) misses `MIN_MATCH_SCORE`, so `similarity()` also compares with Jr/Sr/II/III/IV/V stripped and
@@ -143,17 +146,22 @@ rate limiting. At ~150 requests with `REQUEST_SLEEP_SECONDS = 0.4` there is no t
 
 ## Automation
 
-`.github/workflows/sync_headshots.yml` runs Mondays 15:00 UTC — two hours after `mlb-awards-predictor`
-commits its predictions, so newly-ranked players queued by `add_players_if_new()` are picked up in the same
-cycle. It runs `merge_candidates.py`, `build-index`, `download`, then commits.
+`.github/workflows/sync_headshots.yml` runs **daily at 11:37 UTC** (off :00, when GitHub delays scheduled
+runs). It was Monday-only, which left NFL (Tuesday) and NHL (Wednesday) candidates waiting 5–6 days. It runs
+`merge_candidates.py`, `build-index`, `download`, then commits only if something new was downloaded.
+`merge_candidates.py` pulls `predictions/{sport}_candidates.csv` from mlb-, nfl- and nhl-awards-predictor
+(each predictor lists everyone on its saved board, so headshots exist before a player reaches a graphic).
 
 `.github/workflows/probe_espn.yml` is manual-only (`workflow_dispatch`) and commits nothing. It exists so the
 header matrix can be run *on a runner* and compared against a local run — the environment difference is the
 diagnostic, not either table alone.
 
-**The sync workflow commits with `git add -A`**, so anything the run produces is committed, including
-zero-byte or partial PNGs from a failed download. `download_file()` streams to disk without validating size or
-content type. Worth a guard before staging.
+**Two guards keep a bad run off `main`.** `download_file()` streams to a `.part` file and keeps it only if it
+is at least 1 KB and starts with a PNG or JPEG signature, so a failed download no longer lands as a zero-byte
+or partial PNG that `git add -A` would commit. Both the workflow and `git_commit_and_push()` (local
+`download --push`) refuse to commit if anything is staged for deletion. The sync never deletes assets on purpose,
+and this repo's local copy lives in OneDrive, which has dropped tracked files from the working copy before
+(89 in Oct 2026). If the guard trips, run `git restore .` and retry.
 
 **`git_commit_and_push()` retries with `git pull --no-rebase` on rejection**, which creates merge commits. The
 bot pushes to `main` directly.

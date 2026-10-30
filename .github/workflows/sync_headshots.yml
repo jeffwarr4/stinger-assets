@@ -2,11 +2,19 @@ name: Sync Headshots
 
 on:
   schedule:
-    - cron: '0 15 * * 1'  # Monday 15:00 UTC — 2 hrs after predictions commit (13:00 UTC)
+    # Daily 11:37 UTC (off :00, when GitHub delays scheduled runs). The predictors
+    # write candidates Mon (MLB), Tue (NFL) and Wed (NHL); a daily run picks each
+    # up by the next morning instead of the following Monday. Commits only when
+    # something new was downloaded.
+    - cron: '37 11 * * *'
   workflow_dispatch:        # manual trigger from GitHub Actions UI
 
 permissions:
   contents: write
+
+concurrency:
+  group: sync-headshots
+  cancel-in-progress: false
 
 jobs:
   sync:
@@ -36,6 +44,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
+          # The sync only adds or updates assets; a staged deletion means something
+          # went wrong, and pushing it would remove assets for every consumer.
+          DELETED=$(git diff --staged --diff-filter=D --name-only)
+          if [ -n "$DELETED" ]; then
+            echo "::error::Refusing to commit deletions:"
+            echo "$DELETED"
+            exit 1
+          fi
           if git diff --staged --quiet; then
             echo "Nothing new to commit."
           else
