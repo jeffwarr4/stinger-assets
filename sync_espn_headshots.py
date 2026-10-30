@@ -88,6 +88,15 @@ SPORT_TEAM_CODE_ALIASES = {
         "LA":  "LAR",   # Los Angeles Rams
         "WAS": "WSH",   # Washington Commanders
     },
+    # nhl-awards-predictor writes Hockey-Reference codes.
+    "NHL": {
+        "LAK": "LA",    # Los Angeles Kings
+        "NJD": "NJ",    # New Jersey Devils
+        "SJS": "SJ",    # San Jose Sharks
+        "TBL": "TB",    # Tampa Bay Lightning
+        "UTA": "UTAH",  # Utah Mammoth
+        "VEG": "VGK",   # Vegas Golden Knights
+    },
 }
 
 
@@ -656,14 +665,30 @@ def get_relative_output_path(req: RequestRow, match_row: PlayerIndexRow) -> Path
     return output_dir / f"{filename_base}.png"
 
 
+MIN_IMAGE_BYTES = 1024
+_IMAGE_SIGNATURES = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")   # PNG, JPEG
+
+
 def download_file(session: requests.Session, url: str, dest: Path) -> None:
+    """Stream to a temp file and move it into place only if it is a real image.
+    A failed or truncated download used to land as a zero-byte or partial PNG,
+    which the sync workflow then committed."""
     ensure_parent(dest)
-    resp = session.get(url, timeout=REQUEST_TIMEOUT, stream=True)
-    resp.raise_for_status()
-    with dest.open("wb") as f:
-        for chunk in resp.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    try:
+        resp = session.get(url, timeout=REQUEST_TIMEOUT, stream=True)
+        resp.raise_for_status()
+        with tmp.open("wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        data = tmp.read_bytes()
+        if len(data) < MIN_IMAGE_BYTES or not data.startswith(_IMAGE_SIGNATURES):
+            raise ValueError(f"not a usable image ({len(data)} bytes, "
+                             f"content-type {resp.headers.get('content-type', '?')})")
+        tmp.replace(dest)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def sync_headshots(index_rows: list[PlayerIndexRow], requests_to_process: list[RequestRow]) -> list[MatchResult]:
@@ -767,6 +792,15 @@ def sync_headshots(index_rows: list[PlayerIndexRow], requests_to_process: list[R
 def git_commit_and_push(repo_path: Path, message: str) -> None:
     g = ["git", "-C", str(repo_path)]
     subprocess.run(g + ["add", "."], check=True)
+    # The sync only ever adds or updates assets. A staged deletion means the
+    # working copy lost files (OneDrive has done this) — committing would delete
+    # them on GitHub for every consumer. Unstage and stop instead.
+    deleted = subprocess.run(g + ["diff", "--cached", "--diff-filter=D", "--name-only"],
+                             capture_output=True, text=True, check=True).stdout.split()
+    if deleted:
+        subprocess.run(g + ["reset", "-q"], check=True)
+        raise SystemExit(f"[ERROR] {len(deleted)} tracked file(s) missing from the working copy "
+                         f"(e.g. {deleted[0]}); nothing committed. Run `git restore .` and retry.")
     subprocess.run(g + ["commit", "-m", message], check=False)
     result = subprocess.run(g + ["push"])
     if result.returncode != 0:
