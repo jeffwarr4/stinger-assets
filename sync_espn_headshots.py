@@ -97,6 +97,16 @@ SPORT_TEAM_CODE_ALIASES = {
         "UTA": "UTAH",  # Utah Mammoth
         "VEG": "VGK",   # Vegas Golden Knights
     },
+    # nba-awards-predictor writes the NBA's own codes (Basketball-Reference BRK/CHO/PHO
+    # already mapped to BKN/CHA/PHX there).
+    "NBA": {
+        "GSW": "GS",    # Golden State Warriors
+        "NOP": "NO",    # New Orleans Pelicans
+        "NYK": "NY",    # New York Knicks
+        "SAS": "SA",    # San Antonio Spurs
+        "UTA": "UTAH",  # Utah Jazz
+        "WAS": "WSH",   # Washington Wizards
+    },
 }
 
 

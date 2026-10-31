@@ -77,7 +77,11 @@ writes nflreadpy codes, which differ from ESPN's only for `LA`→`LAR` (Rams) an
 of the shared map — `LA` is the Kings in ESPN's NHL dialect. The NHL repo writes Hockey-Reference codes:
 `LAK`→`LA`, `NJD`→`NJ`, `SJS`→`SJ`, `TBL`→`TB`, `UTA`→`UTAH`, `VEG`→`VGK`. NHL `player_key`s keep the
 Hockey-Reference code (`jack_eichel_veg`), and so do the logo filenames that nhl-awards-predictor reads, except
-`LAK`, which it maps to `la.png`.
+`LAK`, which it maps to `la.png`. The NBA repo writes the NBA's own codes: `GSW`→`GS`, `NOP`→`NO`, `NYK`→`NY`,
+`SAS`→`SA`, `UTA`→`UTAH`, `WAS`→`WSH`. NBA `player_key`s are `first_last_team` with the NBA code
+(`shai_gilgeous_alexander_okc`), and nba-awards-predictor reads the 3-letter logo files (`gsw.png`, `nyk.png`, ...);
+the ESPN short duplicates (`gs`, `ny`, `sa`, `no`, `utah`, `wsh`) are unused. The 19 older `nba/headshots/first_last.png`
+files (no team) are still used by the NBA repo's legacy Google Sheet feed; don't delete them.
 
 **Generational suffixes are ignored when scoring.** nflverse writes "James Cook", ESPN "James Cook III"; the raw
 similarity (0.83) misses `MIN_MATCH_SCORE`, so `similarity()` also compares with Jr/Sr/II/III/IV/V stripped and
@@ -149,7 +153,7 @@ rate limiting. At ~150 requests with `REQUEST_SLEEP_SECONDS = 0.4` there is no t
 `.github/workflows/sync_headshots.yml` runs **daily at 11:37 UTC** (off :00, when GitHub delays scheduled
 runs). It was Monday-only, which left NFL (Tuesday) and NHL (Wednesday) candidates waiting 5–6 days. It runs
 `merge_candidates.py`, `build-index`, `download`, then commits only if something new was downloaded.
-`merge_candidates.py` pulls `predictions/{sport}_candidates.csv` from mlb-, nfl- and nhl-awards-predictor
+`merge_candidates.py` pulls `predictions/{sport}_candidates.csv` from mlb-, nfl-, nhl- and nba-awards-predictor
 (each predictor lists everyone on its saved board, so headshots exist before a player reaches a graphic).
 
 `.github/workflows/probe_espn.yml` is manual-only (`workflow_dispatch`) and commits nothing. It exists so the

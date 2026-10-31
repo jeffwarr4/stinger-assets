@@ -22,8 +22,7 @@ CANDIDATE_SOURCES = [
     "https://raw.githubusercontent.com/jeffwarr4/mlb-awards-predictor/main/predictions/mlb_candidates.csv",
     "https://raw.githubusercontent.com/jeffwarr4/nfl-awards-predictor/main/predictions/nfl_candidates.csv",
     "https://raw.githubusercontent.com/jeffwarr4/nhl-awards-predictor/main/predictions/nhl_candidates.csv",
-    # Add more sports here as their predictor repos come online:
-    # "https://raw.githubusercontent.com/jeffwarr4/nba-predictor/main/predictions/nba_candidates.csv",
+    "https://raw.githubusercontent.com/jeffwarr4/nba-awards-predictor/main/predictions/nba_candidates.csv",
 ]
 
 HEADERS = {"User-Agent": "stinger-assets-sync/1.0"}
