@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import re
 import time
 import unicodedata
@@ -533,13 +534,16 @@ def scrape_injuries(session: requests.Session, sport: str) -> list[PlayerIndexRo
     return rows
 
 
-def build_player_index() -> list[PlayerIndexRow]:
+def build_player_index(sports: Optional[list[str]] = None) -> list[PlayerIndexRow]:
+    """Scrape ESPN rosters (+ injured lists). `sports` limits it to those leagues; default all."""
     # No custom headers — see _KNOWN_BAD_HEADERS.
     session = requests.Session()
 
     all_rows: list[PlayerIndexRow] = []
 
     for sport, urls in SPORT_TEAM_URLS.items():
+        if sports and sport not in sports:
+            continue
         sport_rows: list[PlayerIndexRow] = []
 
         for url in urls:
@@ -925,20 +929,82 @@ def run_downloads() -> None:
     print(f"Saved sheet-ready map to {HEADSHOT_MAP_CSV}")
 
 
+def run_fetch(sport: str, board_csv: Path, max_rank: int, strict: bool) -> int:
+    """In-run fetch for a model repo: download any missing headshot for ranks 1..max_rank of a board CSV.
+
+    The model workflows call this between building the board and committing it, so a player new to the
+    slides gets his headshot in the same run instead of a blank circle until the next daily sync (which
+    reads the committed candidates file, i.e. only after the run). Scrapes only `sport`'s ESPN rosters,
+    writes only into {sport}/headshots/, and never touches data/ or git: the daily sync commits the file
+    later. Returns 1 under --strict if any headshot is still missing, else 0. Under GitHub Actions it
+    also writes downloaded=<n> and missing=<n> to $GITHUB_OUTPUT.
+    """
+    sport = sport.upper()
+    if sport not in SPORT_OUTPUT_DIRS:
+        raise SystemExit(f"[ERROR] unknown sport {sport!r}; expected one of {sorted(SPORT_OUTPUT_DIRS)}")
+    out_dir = ASSETS_REPO_PATH / SPORT_OUTPUT_DIRS[sport]
+
+    with board_csv.open("r", newline="", encoding="utf-8-sig") as f:
+        board = [r for r in csv.DictReader(f)
+                 if (r.get("rank") or "").strip() and int(float(r["rank"])) <= max_rank]
+    if not board:
+        raise SystemExit(f"[ERROR] no rows ranked 1-{max_rank} in {board_csv}")
+
+    wanted = [RequestRow(sport=sport, player_name=r["player_name"].strip(),
+                         player_key=r["player_key"].strip(), team=(r.get("team") or "").strip().upper())
+              for r in board]
+    have = lambda req: (out_dir / f"{safe_filename(req.player_key)}.png").exists()
+    missing = [req for req in wanted if not have(req)]
+
+    downloaded: list[str] = []
+    if not missing:
+        print(f"[OK] all {len(wanted)} {sport} headshots for ranks 1-{max_rank} are present")
+    else:
+        print(f"{len(missing)} {sport} headshot(s) missing: {', '.join(r.player_key for r in missing)}")
+        index_rows = build_player_index([sport])
+        results = sync_headshots(index_rows, missing)
+        for r in results:
+            print(f"  {r.player_key}: {r.status}"
+                  + (f" (matched {r.matched_name}, score {r.match_score})" if r.matched_name else ""))
+        downloaded = [r.player_key for r in results if r.status == "DOWNLOADED"]
+
+    still = [req for req in wanted if not have(req)]
+    for req in still:
+        print(f"::error::No headshot for {req.player_name} ({req.team}) -> {SPORT_OUTPUT_DIRS[sport].as_posix()}"
+              f"/{req.player_key}.png. ESPN had no match or the download failed. Add the PNG to stinger-assets"
+              f" by hand (or fix the name/team alias), then rerun.")
+
+    gh_out = os.environ.get("GITHUB_OUTPUT")
+    if gh_out:
+        with open(gh_out, "a", encoding="utf-8") as f:
+            f.write(f"downloaded={len(downloaded)}\nmissing={len(still)}\n")
+
+    return 1 if (strict and still) else 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "mode",
-        choices=["build-index", "download"],
-        help="build-index = scrape ESPN rosters; download = match and download headshots",
+        choices=["build-index", "download", "fetch"],
+        help="build-index = scrape ESPN rosters; download = match and download headshots; "
+             "fetch = download missing headshots for a model's board (used inside the model workflows)",
     )
     parser.add_argument(
         "--push",
         action="store_true",
         help="Commit and push updated assets after download",
     )
+    parser.add_argument("--sport", help="fetch: NFL, NHL, NBA or MLB")
+    parser.add_argument("--board", type=Path, help="fetch: board CSV with player_key, rank, player_name, team")
+    parser.add_argument("--max-rank", type=int, default=15, help="fetch: ranks 1..N shown on the slides (default 15)")
+    parser.add_argument("--strict", action="store_true", help="fetch: exit 1 if any headshot is still missing")
     args = parser.parse_args()
 
+    if args.mode == "fetch":
+        if not args.sport or not args.board:
+            parser.error("fetch needs --sport and --board")
+        raise SystemExit(run_fetch(args.sport, args.board, args.max_rank, args.strict))
     if args.mode == "build-index":
         run_build_index()
     elif args.mode == "download":

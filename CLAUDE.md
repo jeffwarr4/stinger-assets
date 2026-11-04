@@ -29,6 +29,12 @@ python sync_espn_headshots.py build-index
 python sync_espn_headshots.py download
 python sync_espn_headshots.py download --push      # also git add/commit/push when done
 
+# In-run fetch used by the NFL/NHL/NBA model workflows: download any missing headshot for ranks 1-15 of a
+# board CSV, scraping only that sport's rosters. Writes only {sport}/headshots/, never data/ or git (the daily
+# sync commits the file later). --strict exits 1 if one is still missing; writes downloaded=/missing= to
+# $GITHUB_OUTPUT under Actions. Needs the board's player_key, rank, player_name, team columns.
+python sync_espn_headshots.py fetch --sport nfl --board ../nfl-awards-predictor/predictions/2026/board_mvp_latest.csv --strict
+
 # Team logos (separate script, same ESPN CDN)
 python fetch_team_logos.py
 
