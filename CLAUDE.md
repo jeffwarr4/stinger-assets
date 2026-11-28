@@ -87,7 +87,7 @@ Hockey-Reference code (`jack_eichel_veg`), and so do the logo filenames that nhl
 `SAS`→`SA`, `UTA`→`UTAH`, `WAS`→`WSH`. NBA `player_key`s are `first_last_team` with the NBA code
 (`shai_gilgeous_alexander_okc`), and nba-awards-predictor reads the 3-letter logo files (`gsw.png`, `nyk.png`, ...);
 the ESPN short duplicates (`gs`, `ny`, `sa`, `no`, `utah`, `wsh`) are unused. The 19 older `nba/headshots/first_last.png`
-files (no team) are still used by the NBA repo's legacy Google Sheet feed; don't delete them.
+files (no team) are used only by the NBA repo's legacy Google Sheet feed for the old Squarespace page, which the Cloudflare site (live since 2026-11-23) doesn't read; keep them until that feed is retired (after Squarespace is cancelled, early Dec 2026).
 
 **Generational suffixes are ignored when scoring.** nflverse writes "James Cook", ESPN "James Cook III"; the raw
 similarity (0.83) misses `MIN_MATCH_SCORE`, so `similarity()` also compares with Jr/Sr/II/III/IV/V stripped and
